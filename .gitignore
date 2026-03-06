@@ -1,0 +1,14 @@
+# PyInstaller build output
+dist/
+build/
+*.spec
+
+# Inno Setup output
+dist_installer/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Local config (contains credentials)
+config.json
