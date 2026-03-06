@@ -48,7 +48,7 @@ from datetime import datetime
 # =============================================================================
 # Version & Update Constants
 # =============================================================================
-CURRENT_VERSION = "1.19"
+CURRENT_VERSION = "1.20"
 GITHUB_REPO = "Darkszern/clouddeploy"
 GITHUB_API_LATEST = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
