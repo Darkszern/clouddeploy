@@ -88,7 +88,7 @@ Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"; Tasks: start
 ; Option to launch app after interactive install (user gets checkbox)
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchApp,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
 ; Auto-launch app after silent update (no checkbox needed)
-Filename: "{app}\{#MyAppExeName}"; Flags: nowait skipifdontexist; Check: WizardSilent
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait; Check: WizardSilent
 
 [UninstallDelete]
 ; Clean up leftover files on uninstall
