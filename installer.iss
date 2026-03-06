@@ -85,8 +85,10 @@ Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "
 Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"; Tasks: startmenuicon
 
 [Run]
-; Option to launch app after install
+; Option to launch app after interactive install (user gets checkbox)
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchApp,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
+; Auto-launch app after silent update (no checkbox needed)
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait skipifdontexist; Check: WizardSilent
 
 [UninstallDelete]
 ; Clean up leftover files on uninstall
@@ -125,6 +127,14 @@ begin
   // Check if already installed
   if IsAppInstalled then
   begin
+    // In silent/verysilent mode (auto-update), skip the dialog and auto-reinstall
+    if WizardSilent then
+    begin
+      IsReinstall := True;
+      Result := True;
+      Exit;
+    end;
+
     case MsgBox(
       'LXCC Cloud Deploy is already installed.' + #13#10 + #13#10 +
       'What would you like to do?' + #13#10 + #13#10 +

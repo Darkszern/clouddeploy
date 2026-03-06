@@ -424,9 +424,9 @@ def perform_auto_update(download_url, progress_callback=None):
         if progress_callback:
             progress_callback("Starting installer...", 80)
 
-        # Run the Inno Setup installer silently and close the current app
+        # Run the Inno Setup installer fully silent and close the current app
         subprocess.Popen(
-            [installer_path, "/SILENT", "/CLOSEAPPLICATIONS", "/RESTARTAPPLICATIONS"],
+            [installer_path, "/VERYSILENT", "/CLOSEAPPLICATIONS", "/RESTARTAPPLICATIONS", "/NORESTART"],
             creationflags=subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0,
         )
 
