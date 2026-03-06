@@ -1,29 +1,62 @@
 name: Build and Release
+
 on:
   push:
     tags:
       - 'v*'
+
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
+
     steps:
       - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        shell: bash
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - name: Install dependencies
-        run: pip install pyinstaller paramiko
-      - name: Build EXE
-        run: pyinstaller --onefile --windowed --name "LXCC-CloudDeploy" --icon "LXCCLOGO.ico" cdpl.py
-        continue-on-error: false
-      - name: Build EXE (without icon fallback)
+
+      - name: Install Python dependencies
+        run: |
+          pip install pyinstaller paramiko
+
+      - name: Build EXE with PyInstaller
+        run: |
+          pyinstaller --onefile --windowed --name "DeployTool" --icon "LXCCLOGO.ico" cdpl.py
+
+      - name: Build EXE without icon (fallback)
         if: failure()
-        run: pyinstaller --onefile --windowed --name "LXCC-CloudDeploy" cdpl.py
+        run: |
+          pyinstaller --onefile --windowed --name "DeployTool" cdpl.py
+
+      - name: Install Inno Setup
+        run: |
+          choco install innosetup -y --no-progress
+
+      - name: Update installer version
+        shell: bash
+        run: |
+          sed -i 's/#define MyAppVersion ".*"/#define MyAppVersion "${{ steps.version.outputs.VERSION }}"/' installer.iss
+
+      - name: Build Installer
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer.iss
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/LXCC-CloudDeploy.exe
+          files: |
+            dist_installer/LXCC_CloudDeploy_Setup_v${{ steps.version.outputs.VERSION }}.exe
+            dist/DeployTool.exe
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
