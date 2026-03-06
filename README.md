@@ -12,7 +12,7 @@ A GUI-based deployment tool for managing LXCC bots on a remote Linux server via 
 - **Cloud Configuration** - Bot configs and deployment logs stored on the server
 - **Shell Access** - Open a terminal with SSH connection to any tmux session
 - **Configurable Connection** - IP, password, and bot settings stored locally, editable via Config button
-- **Auto-Update Check** - Checks for newer versions on startup
+- **Auto-Update** - Checks GitHub Releases on startup, downloads and runs the installer automatically
 - **Cross-Platform Shell** - Supports Windows CMD, macOS Terminal, and Linux terminal emulators
 - **Light/Dark Mode** - Toggle between light and dark theme, preference is saved
 - **Professional Installer** - Windows installer with GUI, progress bar, and uninstaller
@@ -21,7 +21,7 @@ A GUI-based deployment tool for managing LXCC bots on a remote Linux server via 
 
 ### Download & Install
 
-1. Download `LXCC_CloudDeploy_Setup_v1.18.exe` from the Releases page
+1. Download `LXCC_CloudDeploy_Setup_v1.20.exe` from the [Releases page](https://github.com/Darkszern/clouddeploy/releases)
 2. Run the installer - it will guide you through the setup:
    - Choose installation directory (default: `C:\Program Files\LXCC Cloud Deploy`)
    - Select shortcuts (Desktop, Start Menu)
@@ -34,7 +34,7 @@ On the first launch, you will be prompted to enter:
 - **Server IP** - The IP address of your cloud server
 - **Password** - The SSH root password
 
-These credentials are saved locally in `config.json` inside the installation directory and are reused for all future connections.
+These credentials are saved locally in `%APPDATA%\LXCC Cloud Deploy\config.json` and are reused for all future connections.
 
 ### Reinstall / Update / Uninstall
 
@@ -62,7 +62,7 @@ You can also uninstall via **Windows Settings > Apps > LXCC Cloud Deploy**.
    - Build `DeployTool.exe` using PyInstaller
    - Package everything into a professional installer using Inno Setup
 4. Output:
-   - `dist_installer\LXCC_CloudDeploy_Setup_v1.18.exe` - The installer to distribute
+   - `dist_installer\LXCC_CloudDeploy_Setup_v1.20.exe` - The installer to distribute
    - `dist\DeployTool.exe` - Standalone EXE (without installer)
 
 ### Build Output Structure
@@ -72,7 +72,7 @@ clouddeploy/
   dist/
     DeployTool.exe              <- Standalone application
   dist_installer/
-    LXCC_CloudDeploy_Setup_v1.18.exe  <- Installer to distribute
+    LXCC_CloudDeploy_Setup_v1.20.exe  <- Installer to distribute
 ```
 
 ## Usage
@@ -129,23 +129,27 @@ clouddeploy/
 C:\Program Files\LXCC Cloud Deploy\
   DeployTool.exe       - Main application
   LXCCLOGO.ico         - Application icon
-  config.json          - Local configuration (created on first start)
   unins000.exe         - Uninstaller
   unins000.dat         - Uninstaller data
+
+%APPDATA%\LXCC Cloud Deploy\
+  config.json          - Local configuration (created on first start)
 ```
 
 ## Auto-Update
 
-On each startup, the tool checks the remote server for a newer version by reading `/root/deployset/cdpl_version.txt`. If a newer version is available, a notification is displayed.
+On each startup, the tool checks the [latest GitHub Release](https://github.com/Darkszern/clouddeploy/releases/latest) for a newer version. If a newer version is available, a dialog is shown with **Update now** and **Later** buttons.
 
-To publish a new version, update the file on the server:
-```bash
-echo "1.18" > /root/deployset/cdpl_version.txt
-```
+When updating, the tool downloads the Inno Setup installer from the release and runs it silently with `/SILENT /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS`.
+
+To publish a new version:
+1. Update `CURRENT_VERSION` in `cdpl.py`
+2. Create a Git tag (e.g. `v1.20`) and push it
+3. GitHub Actions builds the EXE + installer and creates the release automatically
 
 ## Installer Features
 
-The installer (`LXCC_CloudDeploy_Setup_v1.18.exe`) provides:
+The installer (`LXCC_CloudDeploy_Setup_v1.20.exe`) provides:
 
 - **Welcome screen** with version info
 - **Language selection** (English / German)
@@ -181,6 +185,18 @@ The installer (`LXCC_CloudDeploy_Setup_v1.18.exe`) provides:
 | v1.16 | Removed hardcoded IP, local config, Config button, professional Inno Setup installer, auto-update check |
 | v1.17 | Light/Dark mode toggle with persistent theme preference |
 | v1.18 | Configurable main bot settings (bot name, script path, tmux session, SSH user) via Config window |
+| v1.19 | Auto-update via GitHub Releases, native dark Windows titlebar, custom gradient titlebar removed |
+| v1.20 | Auto-update downloads Inno Setup installer instead of standalone EXE, improved update dialog with Update now / Later buttons |
+
+## CI/CD
+
+Releases are built automatically via **GitHub Actions**. When you push a tag like `v1.20`:
+
+1. GitHub Actions builds `DeployTool.exe` with PyInstaller on Windows
+2. Inno Setup compiles the installer with the version from the tag
+3. Both files are attached to a new GitHub Release
+
+Workflow: [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml)
 
 ## Requirements
 
