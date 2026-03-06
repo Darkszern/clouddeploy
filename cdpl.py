@@ -373,12 +373,18 @@ def check_for_update():
         if not remote_version:
             return (False, None, None)
 
-        # Find the .exe asset
+        # Prefer the Setup installer; fall back to standalone EXE
         download_url = None
+        fallback_url = None
         for asset in data.get("assets", []):
-            if asset["name"].lower().endswith(".exe") and "setup" not in asset["name"].lower():
+            name = asset["name"].lower()
+            if name.endswith(".exe") and "setup" in name:
                 download_url = asset["browser_download_url"]
                 break
+            elif name.endswith(".exe") and not fallback_url:
+                fallback_url = asset["browser_download_url"]
+        if not download_url:
+            download_url = fallback_url
 
         if not download_url:
             return (False, None, None)
@@ -394,59 +400,47 @@ def check_for_update():
 
 
 def perform_auto_update(download_url, progress_callback=None):
-    """Downloads the new EXE from GitHub and restarts the application.
+    """Downloads the installer from GitHub and runs it.
     Returns (success, message). progress_callback(text, percent) for UI updates."""
     try:
+        if not getattr(sys, 'frozen', False):
+            return (False, "Auto-update only works with the compiled EXE.")
+
         if progress_callback:
             progress_callback("Connecting to GitHub...", 10)
 
-        # Download to a temp file next to the current EXE
-        if getattr(sys, 'frozen', False):
-            current_exe = sys.executable
-        else:
-            return (False, "Auto-update only works with the compiled EXE.")
-
-        update_exe = current_exe + ".update"
+        # Download installer to temp directory
+        temp_dir = tempfile.gettempdir()
+        installer_path = os.path.join(temp_dir, "LXCC_CloudDeploy_Setup.exe")
 
         if progress_callback:
-            progress_callback("Downloading update...", 30)
+            progress_callback("Downloading installer...", 30)
 
         req = urllib.request.Request(download_url, headers={"User-Agent": "LXCC-CloudDeploy"})
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            with open(update_exe, "wb") as f:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            with open(installer_path, "wb") as f:
                 f.write(resp.read())
 
         if progress_callback:
-            progress_callback("Preparing restart...", 80)
+            progress_callback("Starting installer...", 80)
 
-        # Create a batch script that waits for the old process to exit,
-        # replaces the EXE, and restarts
-        bat_path = os.path.join(os.path.dirname(current_exe), "_update.bat")
-        with open(bat_path, "w") as bat:
-            bat.write(f'@echo off\n')
-            bat.write(f'timeout /t 2 /nobreak >nul\n')
-            bat.write(f'del "{current_exe}"\n')
-            bat.write(f'move "{update_exe}" "{current_exe}"\n')
-            bat.write(f'start "" "{current_exe}"\n')
-            bat.write(f'del "%~f0"\n')
+        # Run the Inno Setup installer silently and close the current app
+        subprocess.Popen(
+            [installer_path, "/SILENT", "/CLOSEAPPLICATIONS", "/RESTARTAPPLICATIONS"],
+            creationflags=subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0,
+        )
 
         if progress_callback:
-            progress_callback("Restarting...", 100)
+            progress_callback("Installer started. Closing...", 100)
 
-        # Launch the updater batch and exit
-        subprocess.Popen(
-            [bat_path],
-            creationflags=subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0,
-            shell=True
-        )
-        return (True, "Update downloaded. Restarting...")
+        return (True, "Installer started. Closing application...")
 
     except Exception as e:
         # Clean up partial download
         try:
-            update_path = sys.executable + ".update"
-            if os.path.exists(update_path):
-                os.remove(update_path)
+            temp_installer = os.path.join(tempfile.gettempdir(), "LXCC_CloudDeploy_Setup.exe")
+            if os.path.exists(temp_installer):
+                os.remove(temp_installer)
         except Exception:
             pass
         return (False, f"Update failed: {e}")
@@ -1570,20 +1564,51 @@ class App:
         threading.Thread(target=_check, daemon=True).start()
 
     def _prompt_update(self, remote_version, download_url):
-        """Ask user if they want to auto-update, then do it."""
-        result = messagebox.askyesno(
-            "Update Available",
-            f"A new version (v{remote_version}) is available!\n"
-            f"You are running v{CURRENT_VERSION}.\n\n"
-            f"Update now automatically?"
-        )
-        if not result:
-            return
+        """Show update dialog with 'Update now' and 'Later' buttons."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Update Available")
+        dialog.geometry("400x180")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.grab_set()
+        apply_dark_titlebar(dialog)
 
-        # Show progress dialog
+        theme = get_current_theme()
+
+        tk.Label(
+            dialog, text="New version available!",
+            font=("Arial", 13, "bold"), fg=theme.get("label_fg", "#222")
+        ).pack(pady=(18, 5))
+        tk.Label(
+            dialog,
+            text=f"v{CURRENT_VERSION}  →  v{remote_version}",
+            font=("Arial", 11), fg=theme.get("label_fg", "#555")
+        ).pack(pady=(0, 15))
+
+        btn_frame = tk.Frame(dialog)
+        btn_frame.pack(pady=5)
+
+        def on_update_now():
+            dialog.destroy()
+            self._run_update(download_url)
+
+        tk.Button(
+            btn_frame, text="Update now", width=14, font=("Arial", 10, "bold"),
+            bg="#4CAF50", fg="white", command=on_update_now
+        ).pack(side="left", padx=10)
+        tk.Button(
+            btn_frame, text="Later", width=14, font=("Arial", 10),
+            command=dialog.destroy
+        ).pack(side="left", padx=10)
+
+        apply_theme(dialog, is_root=True)
+
+    def _run_update(self, download_url):
+        """Show progress dialog and run the update."""
         progress = tk.Toplevel(self.root)
         progress.title("Updating...")
         progress.geometry("350x132")
+        progress.resizable(False, False)
         progress.transient(self.root)
         progress.grab_set()
         apply_dark_titlebar(progress)
