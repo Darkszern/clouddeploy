@@ -1,0 +1,29 @@
+name: Build and Release
+on:
+  push:
+    tags:
+      - 'v*'
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install dependencies
+        run: pip install pyinstaller paramiko
+      - name: Build EXE
+        run: pyinstaller --onefile --windowed --name "LXCC-CloudDeploy" --icon "LXCCLOGO.ico" cdpl.py
+        continue-on-error: false
+      - name: Build EXE (without icon fallback)
+        if: failure()
+        run: pyinstaller --onefile --windowed --name "LXCC-CloudDeploy" cdpl.py
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/LXCC-CloudDeploy.exe
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
