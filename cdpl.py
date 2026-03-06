@@ -27,8 +27,9 @@ v1.16 - Removed hardcoded IP, added local config, installer,
         Config button, and auto-update check
 v1.17 - Light/Dark mode toggle with persistent theme preference
 v1.18 - Main Bot settings configurable via Config window
+v1.21 - Deployer name prompt and deployment log viewer
 
-Current Version: v1.18
+Current Version: v1.21
 =============================================================================
 """
 
@@ -48,7 +49,7 @@ from datetime import datetime
 # =============================================================================
 # Version & Update Constants
 # =============================================================================
-CURRENT_VERSION = "1.20.2"
+CURRENT_VERSION = "1.21.0"
 GITHUB_REPO = "Darkszern/clouddeploy"
 GITHUB_API_LATEST = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
@@ -168,6 +169,21 @@ def get_bot_name():
     return DEFAULT_BOT_NAME
 
 
+def get_deployer_name():
+    """Returns the saved deployer name from config, or empty string."""
+    config = load_local_config()
+    if config:
+        return config.get("deployer_name", "")
+    return ""
+
+
+def save_deployer_name(name):
+    """Saves the deployer name to local config."""
+    config = load_local_config() or {}
+    config["deployer_name"] = name
+    save_local_config(config)
+
+
 # =============================================================================
 # Theme System (Light / Dark Mode)
 # =============================================================================
@@ -207,6 +223,7 @@ THEMES = {
         "btn_deployscript": "#00BCD4",
         "btn_dlscript": "#009688",
         "btn_openshell": "#607D8B",
+        "btn_log": "#FF9800",
     },
     "dark": {
         "bg": "#1E1E1E",
@@ -241,6 +258,7 @@ THEMES = {
         "btn_deployscript": "#0097A7",
         "btn_dlscript": "#00796B",
         "btn_openshell": "#455A64",
+        "btn_log": "#F57C00",
     },
 }
 
@@ -683,7 +701,7 @@ def save_bot_config_to_cloud(ssh_host, pw, config):
         return False
 
 
-def log_action_to_cloud(ssh_host, pw, action, details=""):
+def log_action_to_cloud(ssh_host, pw, action, details="", deployer=""):
     """Logs an action to the cloud deployment log."""
     try:
         ssh = paramiko.SSHClient()
@@ -696,7 +714,10 @@ def log_action_to_cloud(ssh_host, pw, action, details=""):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         computer_name = platform.node()
 
-        log_entry = f"[{timestamp}] [{computer_name}] {action}"
+        log_entry = f"[{timestamp}] [{computer_name}]"
+        if deployer:
+            log_entry += f" [{deployer}]"
+        log_entry += f" {action}"
         if details:
             log_entry += f" - {details}"
         log_entry += "\n"
@@ -709,6 +730,24 @@ def log_action_to_cloud(ssh_host, pw, action, details=""):
     except Exception as e:
         print(f"Error logging to cloud: {e}")
         return False
+
+
+def read_cloud_log(ssh_host, pw):
+    """Reads the deployment log from cloud server and returns it as a string."""
+    try:
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(ssh_host, username=get_ssh_user(), password=pw)
+
+        stdin, stdout, stderr = ssh.exec_command(f"cat {REMOTE_LOG_FILE} 2>/dev/null")
+        log_content = stdout.read().decode('utf-8', errors='replace').strip()
+        ssh.close()
+
+        if not log_content:
+            return "No log entries yet."
+        return log_content
+    except Exception as e:
+        return f"Error reading log: {e}"
 
 
 def download_cloud_log(ssh_host, pw, save_path):
@@ -1377,6 +1416,50 @@ class BotManagerWindow:
         except Exception as e:
             messagebox.showerror("Error", f"Could not stop bot:\n{e}")
 
+    def _ask_deployer_name(self):
+        """Asks the user for their name before deploying. Returns the name or None if cancelled."""
+        dialog = tk.Toplevel(self.win)
+        dialog.title("Deployer Name")
+        dialog.geometry("350x150")
+        dialog.resizable(False, False)
+        dialog.transient(self.win)
+        dialog.grab_set()
+        apply_dark_titlebar(dialog)
+
+        tk.Label(dialog, text="Who is deploying?", font=("Arial", 11, "bold")).pack(pady=(15, 5))
+        tk.Label(dialog, text="Enter your name:", font=("Arial", 9)).pack(pady=(0, 5))
+
+        name_var = tk.StringVar(value=get_deployer_name())
+        name_entry = tk.Entry(dialog, textvariable=name_var, width=30, font=("Arial", 10))
+        name_entry.pack(pady=5)
+        name_entry.focus_set()
+        name_entry.select_range(0, tk.END)
+
+        result = [None]
+
+        def on_ok(event=None):
+            name = name_var.get().strip()
+            if not name:
+                messagebox.showwarning("Name required", "Please enter your name.", parent=dialog)
+                return
+            save_deployer_name(name)
+            result[0] = name
+            dialog.destroy()
+
+        def on_cancel():
+            dialog.destroy()
+
+        name_entry.bind("<Return>", on_ok)
+
+        btn_frame = tk.Frame(dialog)
+        btn_frame.pack(pady=10)
+        tk.Button(btn_frame, text="OK", command=on_ok, width=10, bg="#4CAF50", fg="white").pack(side="left", padx=5)
+        tk.Button(btn_frame, text="Cancel", command=on_cancel, width=10).pack(side="left", padx=5)
+
+        apply_theme(dialog, is_root=True)
+        dialog.wait_window()
+        return result[0]
+
     def deploy_to_bot(self):
         session_name = self.get_selected_session()
         if not session_name:
@@ -1387,6 +1470,9 @@ class BotManagerWindow:
         bot = self.bots[session_name]
         file_path = filedialog.askopenfilename(title=f"Select script for {bot['name']}", filetypes=[("Python files", "*.py"), ("All files", "*.*")])
         if not file_path:
+            return
+        deployer = self._ask_deployer_name()
+        if not deployer:
             return
         try:
             ssh = paramiko.SSHClient()
@@ -1399,7 +1485,7 @@ class BotManagerWindow:
             ssh.exec_command(f"tmux send-keys -t {session_name} 'python3.13 {bot['script']}' Enter")
             ssh.close()
 
-            log_action_to_cloud(self.ssh_host, self.password, "SCRIPT_DEPLOYED", f"Deployed '{os.path.basename(file_path)}' to bot '{bot['name']}' ({session_name})")
+            log_action_to_cloud(self.ssh_host, self.password, "SCRIPT_DEPLOYED", f"Deployed '{os.path.basename(file_path)}' to bot '{bot['name']}' ({session_name})", deployer=deployer)
 
             messagebox.showinfo("Success", f"Script deployed and bot '{bot['name']}' restarted.")
         except Exception as e:
@@ -1503,7 +1589,7 @@ class App:
         self.ssh_host = ssh_host
         self.password = password
         self.root.title(f"LXCC Bot Deployment Tool v{CURRENT_VERSION}")
-        self.root.geometry("450x552")
+        self.root.geometry("450x590")
         set_window_icon(self.root)
         apply_dark_titlebar(self.root)
         self.selected_file = None
@@ -1539,7 +1625,8 @@ class App:
         tk.Button(btn_frame, text="Open Shell", command=self.open_shell, width=32, bg=t["btn_shell"], fg="white", font=("Arial", 10, "bold")).grid(row=2, column=0, columnspan=2, padx=10, pady=5)
         tk.Button(btn_frame, text="Bot Manager", command=self.open_bot_manager, width=32, bg=t["btn_manager"], fg="white", font=("Arial", 10, "bold")).grid(row=3, column=0, columnspan=2, padx=10, pady=5)
         tk.Button(btn_frame, text="Config", command=self.open_config, width=32, bg=t["btn_config"], fg="white", font=("Arial", 10, "bold")).grid(row=4, column=0, columnspan=2, padx=10, pady=5)
-        tk.Button(btn_frame, text="Quit", command=root.quit, width=32).grid(row=5, column=0, columnspan=2, padx=10, pady=10)
+        tk.Button(btn_frame, text="Deployment Log", command=self.show_deployment_log, width=32, bg=t["btn_log"], fg="white", font=("Arial", 10, "bold")).grid(row=5, column=0, columnspan=2, padx=10, pady=5)
+        tk.Button(btn_frame, text="Quit", command=root.quit, width=32).grid(row=6, column=0, columnspan=2, padx=10, pady=10)
 
         apply_theme(self.root, is_root=True)
         self._update_theme_btn()
@@ -1651,9 +1738,56 @@ class App:
             self.selected_file = path
             self.file_label.config(text=os.path.basename(path), fg=get_current_theme()["label_fg"])
 
+    def _ask_deployer_name(self):
+        """Asks the user for their name before deploying. Returns the name or None if cancelled."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Deployer Name")
+        dialog.geometry("350x150")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.grab_set()
+        apply_dark_titlebar(dialog)
+
+        tk.Label(dialog, text="Who is deploying?", font=("Arial", 11, "bold")).pack(pady=(15, 5))
+        tk.Label(dialog, text="Enter your name:", font=("Arial", 9)).pack(pady=(0, 5))
+
+        name_var = tk.StringVar(value=get_deployer_name())
+        name_entry = tk.Entry(dialog, textvariable=name_var, width=30, font=("Arial", 10))
+        name_entry.pack(pady=5)
+        name_entry.focus_set()
+        name_entry.select_range(0, tk.END)
+
+        result = [None]
+
+        def on_ok(event=None):
+            name = name_var.get().strip()
+            if not name:
+                messagebox.showwarning("Name required", "Please enter your name.", parent=dialog)
+                return
+            save_deployer_name(name)
+            result[0] = name
+            dialog.destroy()
+
+        def on_cancel():
+            dialog.destroy()
+
+        name_entry.bind("<Return>", on_ok)
+
+        btn_frame = tk.Frame(dialog)
+        btn_frame.pack(pady=10)
+        tk.Button(btn_frame, text="OK", command=on_ok, width=10, bg="#4CAF50", fg="white").pack(side="left", padx=5)
+        tk.Button(btn_frame, text="Cancel", command=on_cancel, width=10).pack(side="left", padx=5)
+
+        apply_theme(dialog, is_root=True)
+        dialog.wait_window()
+        return result[0]
+
     def deploy(self):
         if not self.selected_file:
             messagebox.showerror("Error", "No script selected.")
+            return
+        deployer = self._ask_deployer_name()
+        if not deployer:
             return
         tmp_path = "lxccbot.py"
         try:
@@ -1663,7 +1797,7 @@ class App:
             return
         try:
             upload_and_replace(tmp_path, self.ssh_host, self.password)
-            log_action_to_cloud(self.ssh_host, self.password, "MAIN_BOT_DEPLOYED", f"Deployed main bot script: {os.path.basename(self.selected_file)}")
+            log_action_to_cloud(self.ssh_host, self.password, "MAIN_BOT_DEPLOYED", f"Deployed main bot script: {os.path.basename(self.selected_file)}", deployer=deployer)
             messagebox.showinfo("Success", "Script deployed and bot restarted.")
             self.root.after(2000, self.update_status)
         except Exception as e:
@@ -1716,6 +1850,56 @@ class App:
             self.password = new_config["ssh_password"]
             self.update_status()
         ConfigWindow(self.root, current_config, on_save_callback=on_config_saved)
+
+    def show_deployment_log(self):
+        """Shows the deployment log from the server in a popup window."""
+        log_win = tk.Toplevel(self.root)
+        log_win.title("Deployment Log")
+        log_win.geometry("620x450")
+        log_win.transient(self.root)
+        apply_dark_titlebar(log_win)
+
+        t = get_current_theme()
+        tk.Label(log_win, text="Deployment Log", font=("Arial", 12, "bold")).pack(pady=(10, 5))
+
+        text_frame = tk.Frame(log_win)
+        text_frame.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
+        scrollbar = tk.Scrollbar(text_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        log_text = tk.Text(text_frame, font=("Consolas", 9), wrap=tk.WORD, yscrollcommand=scrollbar.set, state=tk.DISABLED)
+        log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=log_text.yview)
+
+        status_label = tk.Label(log_win, text="Loading...", font=("Arial", 9), fg="gray")
+        status_label.pack(pady=(0, 5))
+
+        btn_frame = tk.Frame(log_win)
+        btn_frame.pack(pady=(0, 10))
+        tk.Button(btn_frame, text="Refresh", command=lambda: load_log(), width=12, bg="#2196F3", fg="white").pack(side="left", padx=5)
+        tk.Button(btn_frame, text="Close", command=log_win.destroy, width=12).pack(side="left", padx=5)
+
+        apply_theme(log_win, is_root=True)
+
+        def load_log():
+            status_label.config(text="Loading...", fg="gray")
+            log_text.config(state=tk.NORMAL)
+            log_text.delete("1.0", tk.END)
+            log_text.config(state=tk.DISABLED)
+
+            def fetch():
+                content = read_cloud_log(self.ssh_host, self.password)
+                def update_ui():
+                    log_text.config(state=tk.NORMAL)
+                    log_text.delete("1.0", tk.END)
+                    log_text.insert(tk.END, content)
+                    log_text.see(tk.END)
+                    log_text.config(state=tk.DISABLED)
+                    status_label.config(text=f"Last updated: {datetime.now().strftime('%H:%M:%S')}", fg="green")
+                log_win.after(0, update_ui)
+
+            threading.Thread(target=fetch, daemon=True).start()
+
+        load_log()
 
     def install_main_requirements(self):
         req_file = filedialog.askopenfilename(title="Select requirements.txt for LXCCBot", filetypes=[("Text files", "*.txt"), ("All files", "*.*")], initialfile="requirements.txt")
