@@ -13,7 +13,7 @@
 ; =============================================================================
 
 #define MyAppName "LXCC Cloud Deploy"
-#define MyAppVersion "1.21.0"
+#define MyAppVersion "1.22.1"
 #define MyAppPublisher "LXCC"
 #define MyAppExeName "DeployTool.exe"
 #define MyAppIcon "LXCCLOGO.ico"

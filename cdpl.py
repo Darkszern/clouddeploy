@@ -27,9 +27,14 @@ v1.16 - Removed hardcoded IP, added local config, installer,
         Config button, and auto-update check
 v1.17 - Light/Dark mode toggle with persistent theme preference
 v1.18 - Main Bot settings configurable via Config window
+v1.19 - Auto-update via GitHub Releases, native dark Windows titlebar
+v1.20 - Auto-update downloads Inno Setup installer, improved update dialog
+v1.20.2 - Seamless silent auto-update, app auto-restarts after update
 v1.21 - Deployer name prompt and deployment log viewer
+v1.22 - venv activation on new tmux session creation
+v1.22.1 - Fixed Bot Manager deploy button crash (self.win -> self.window)
 
-Current Version: v1.21
+Current Version: v1.22.1
 =============================================================================
 """
 
@@ -49,7 +54,7 @@ from datetime import datetime
 # =============================================================================
 # Version & Update Constants
 # =============================================================================
-CURRENT_VERSION = "1.21.0"
+CURRENT_VERSION = "1.22.1"
 GITHUB_REPO = "Darkszern/clouddeploy"
 GITHUB_API_LATEST = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
@@ -536,9 +541,7 @@ def start_bot(ssh_host, pw):
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     ssh.connect(ssh_host, username=get_ssh_user(), password=pw)
-    script_dir = os.path.dirname(get_remote_script_path())
-    venv_activate = f"{script_dir}/venv/bin/activate"
-    ssh.exec_command(f"tmux send-keys -t {get_tmux_session()} 'source {venv_activate} 2>/dev/null; python3.13 {get_remote_script_path()}' Enter")
+    ssh.exec_command(f"tmux send-keys -t {get_tmux_session()} 'python3.13 {get_remote_script_path()}' Enter")
     ssh.close()
 
 
@@ -557,10 +560,8 @@ def upload_and_replace(file_path, ssh_host, pw):
     sftp = ssh.open_sftp()
     sftp.put(file_path, get_remote_script_path())
     sftp.close()
-    script_dir = os.path.dirname(get_remote_script_path())
-    venv_activate = f"{script_dir}/venv/bin/activate"
     ssh.exec_command(f"tmux send-keys -t {get_tmux_session()} C-c")
-    ssh.exec_command(f"tmux send-keys -t {get_tmux_session()} 'source {venv_activate} 2>/dev/null; python3.13 {get_remote_script_path()}' Enter")
+    ssh.exec_command(f"tmux send-keys -t {get_tmux_session()} 'python3.13 {get_remote_script_path()}' Enter")
     ssh.close()
 
 
@@ -603,11 +604,14 @@ def get_tmux_sessions(ssh_host, pw):
         return []
 
 
-def create_tmux_session(ssh_host, pw, session_name):
+def create_tmux_session(ssh_host, pw, session_name, venv_dir=None):
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     ssh.connect(ssh_host, username=get_ssh_user(), password=pw)
     ssh.exec_command(f"tmux new-session -d -s {session_name}")
+    if venv_dir:
+        venv_activate = f"{venv_dir}/venv/bin/activate"
+        ssh.exec_command(f"tmux send-keys -t {session_name} 'source {venv_activate} 2>/dev/null' Enter")
     ssh.close()
 
 
@@ -1265,19 +1269,24 @@ class BotManagerWindow:
     def create_session(self):
         dialog = tk.Toplevel(self.window)
         dialog.title("Create New Session")
-        dialog.geometry("300x152")
+        dialog.geometry("300x212")
         apply_dark_titlebar(dialog)
         tk.Label(dialog, text="Session Name:").pack(pady=10)
         name_entry = tk.Entry(dialog, width=30)
         name_entry.pack(pady=5)
         name_entry.focus()
+        tk.Label(dialog, text="venv Directory (optional):").pack(pady=(10, 0))
+        venv_entry = tk.Entry(dialog, width=30)
+        venv_entry.pack(pady=5)
+        venv_entry.insert(0, "/root/")
         def create():
             name = name_entry.get().strip()
             if not name:
                 messagebox.showerror("Error", "Please enter a name.")
                 return
+            venv_dir = venv_entry.get().strip() or None
             try:
-                create_tmux_session(self.ssh_host, self.password, name)
+                create_tmux_session(self.ssh_host, self.password, name, venv_dir=venv_dir)
                 log_action_to_cloud(self.ssh_host, self.password, "SESSION_CREATED", f"Created new tmux session '{name}'")
                 messagebox.showinfo("Success", f"Session '{name}' created.")
                 dialog.destroy()
@@ -1395,9 +1404,7 @@ class BotManagerWindow:
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             ssh.connect(self.ssh_host, username=get_ssh_user(), password=self.password)
-            script_dir = os.path.dirname(bot['script'])
-            venv_activate = f"{script_dir}/venv/bin/activate"
-            ssh.exec_command(f"tmux send-keys -t {session_name} 'source {venv_activate} 2>/dev/null; python3.13 {bot['script']}' Enter")
+            ssh.exec_command(f"tmux send-keys -t {session_name} 'python3.13 {bot['script']}' Enter")
             ssh.close()
             log_action_to_cloud(self.ssh_host, self.password, "BOT_STARTED", f"Started bot '{bot['name']}' in session '{session_name}'")
             messagebox.showinfo("Success", f"Bot '{bot['name']}' is starting...")
@@ -1487,10 +1494,8 @@ class BotManagerWindow:
             sftp = ssh.open_sftp()
             sftp.put(file_path, bot['script'])
             sftp.close()
-            script_dir = os.path.dirname(bot['script'])
-            venv_activate = f"{script_dir}/venv/bin/activate"
             ssh.exec_command(f"tmux send-keys -t {session_name} C-c")
-            ssh.exec_command(f"tmux send-keys -t {session_name} 'source {venv_activate} 2>/dev/null; python3.13 {bot['script']}' Enter")
+            ssh.exec_command(f"tmux send-keys -t {session_name} 'python3.13 {bot['script']}' Enter")
             ssh.close()
 
             log_action_to_cloud(self.ssh_host, self.password, "SCRIPT_DEPLOYED", f"Deployed '{os.path.basename(file_path)}' to bot '{bot['name']}' ({session_name})", deployer=deployer)
