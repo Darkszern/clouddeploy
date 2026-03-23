@@ -536,7 +536,9 @@ def start_bot(ssh_host, pw):
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     ssh.connect(ssh_host, username=get_ssh_user(), password=pw)
-    ssh.exec_command(f"tmux send-keys -t {get_tmux_session()} 'python3.13 {get_remote_script_path()}' Enter")
+    script_dir = os.path.dirname(get_remote_script_path())
+    venv_activate = f"{script_dir}/venv/bin/activate"
+    ssh.exec_command(f"tmux send-keys -t {get_tmux_session()} 'source {venv_activate} 2>/dev/null; python3.13 {get_remote_script_path()}' Enter")
     ssh.close()
 
 
@@ -555,8 +557,10 @@ def upload_and_replace(file_path, ssh_host, pw):
     sftp = ssh.open_sftp()
     sftp.put(file_path, get_remote_script_path())
     sftp.close()
+    script_dir = os.path.dirname(get_remote_script_path())
+    venv_activate = f"{script_dir}/venv/bin/activate"
     ssh.exec_command(f"tmux send-keys -t {get_tmux_session()} C-c")
-    ssh.exec_command(f"tmux send-keys -t {get_tmux_session()} 'python3.13 {get_remote_script_path()}' Enter")
+    ssh.exec_command(f"tmux send-keys -t {get_tmux_session()} 'source {venv_activate} 2>/dev/null; python3.13 {get_remote_script_path()}' Enter")
     ssh.close()
 
 
@@ -1391,7 +1395,9 @@ class BotManagerWindow:
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             ssh.connect(self.ssh_host, username=get_ssh_user(), password=self.password)
-            ssh.exec_command(f"tmux send-keys -t {session_name} 'python3.13 {bot['script']}' Enter")
+            script_dir = os.path.dirname(bot['script'])
+            venv_activate = f"{script_dir}/venv/bin/activate"
+            ssh.exec_command(f"tmux send-keys -t {session_name} 'source {venv_activate} 2>/dev/null; python3.13 {bot['script']}' Enter")
             ssh.close()
             log_action_to_cloud(self.ssh_host, self.password, "BOT_STARTED", f"Started bot '{bot['name']}' in session '{session_name}'")
             messagebox.showinfo("Success", f"Bot '{bot['name']}' is starting...")
@@ -1418,11 +1424,11 @@ class BotManagerWindow:
 
     def _ask_deployer_name(self):
         """Asks the user for their name before deploying. Returns the name or None if cancelled."""
-        dialog = tk.Toplevel(self.win)
+        dialog = tk.Toplevel(self.window)
         dialog.title("Deployer Name")
         dialog.geometry("350x150")
         dialog.resizable(False, False)
-        dialog.transient(self.win)
+        dialog.transient(self.window)
         dialog.grab_set()
         apply_dark_titlebar(dialog)
 
@@ -1481,8 +1487,10 @@ class BotManagerWindow:
             sftp = ssh.open_sftp()
             sftp.put(file_path, bot['script'])
             sftp.close()
+            script_dir = os.path.dirname(bot['script'])
+            venv_activate = f"{script_dir}/venv/bin/activate"
             ssh.exec_command(f"tmux send-keys -t {session_name} C-c")
-            ssh.exec_command(f"tmux send-keys -t {session_name} 'python3.13 {bot['script']}' Enter")
+            ssh.exec_command(f"tmux send-keys -t {session_name} 'source {venv_activate} 2>/dev/null; python3.13 {bot['script']}' Enter")
             ssh.close()
 
             log_action_to_cloud(self.ssh_host, self.password, "SCRIPT_DEPLOYED", f"Deployed '{os.path.basename(file_path)}' to bot '{bot['name']}' ({session_name})", deployer=deployer)
