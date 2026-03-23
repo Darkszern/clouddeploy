@@ -27,9 +27,13 @@ v1.16 - Removed hardcoded IP, added local config, installer,
         Config button, and auto-update check
 v1.17 - Light/Dark mode toggle with persistent theme preference
 v1.18 - Main Bot settings configurable via Config window
-v1.21 - Deployer name prompt and deployment log viewer
+v1.19 - Auto-update via GitHub Releases, native dark Windows titlebar
+v1.20 - Auto-update downloads Inno Setup installer, improved update dialog
+v1.20.2 - Seamless silent auto-update, app auto-restarts after update
+v1.21 - Deployer name prompt, deployment log viewer, venv activation
+        on session creation, Bot Manager deploy fix
 
-Current Version: v1.21
+Current Version: v1.21.0
 =============================================================================
 """
 

@@ -106,7 +106,7 @@ echo ===========================================================================
 echo  BUILD COMPLETE!
 echo =============================================================================
 echo.
-echo  Installer EXE:  dist_installer\LXCC_CloudDeploy_Setup_v1.19.exe
+echo  Installer EXE:  dist_installer\LXCC_CloudDeploy_Setup_v1.21.0.exe
 echo  Standalone EXE:  dist\DeployTool.exe
 echo.
 echo  You can distribute the Setup EXE to users.
