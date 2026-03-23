@@ -30,10 +30,11 @@ v1.18 - Main Bot settings configurable via Config window
 v1.19 - Auto-update via GitHub Releases, native dark Windows titlebar
 v1.20 - Auto-update downloads Inno Setup installer, improved update dialog
 v1.20.2 - Seamless silent auto-update, app auto-restarts after update
-v1.21 - Deployer name prompt, deployment log viewer, venv activation
-        on session creation, Bot Manager deploy fix
+v1.21 - Deployer name prompt and deployment log viewer
+v1.22 - venv activation on new tmux session creation
+v1.22.1 - Fixed Bot Manager deploy button crash (self.win -> self.window)
 
-Current Version: v1.21.0
+Current Version: v1.22.1
 =============================================================================
 """
 
@@ -53,7 +54,7 @@ from datetime import datetime
 # =============================================================================
 # Version & Update Constants
 # =============================================================================
-CURRENT_VERSION = "1.21.0"
+CURRENT_VERSION = "1.22.1"
 GITHUB_REPO = "Darkszern/clouddeploy"
 GITHUB_API_LATEST = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
